@@ -3,9 +3,9 @@ import sys
 import json
 import logging
 import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
-import scrapetube
 from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
 from google.oauth2.service_account import Credentials
@@ -13,37 +13,46 @@ from googleapiclient.discovery import build
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_latest_video_transcript(channel_handle):
-    logging.info(f"Fetching latest video from {channel_handle}...")
+def get_latest_video_transcript(channel_id):
+    logging.info(f"Fetching latest video from channel ID: {channel_id} via RSS...")
     try:
-        # Use channel_url to handle the @handle format
-        videos = scrapetube.get_channel(channel_url=f"https://www.youtube.com/{channel_handle}")
-        latest_video = next(videos)
+        # IP 차단을 우회하는 가장 우아한 방식: YouTube RSS 피드 직접 타격
+        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        response = requests.get(rss_url)
+        response.raise_for_status()
         
-        video_id = latest_video['videoId']
-        video_title = latest_video['title']['runs'][0]['text']
+        root = ET.fromstring(response.content)
+        # XML 네임스페이스 매핑
+        ns = {'yt': 'http://www.youtube.com/xml/schemas/2015', 'atom': 'http://www.w3.org/2005/Atom'}
+        
+        # 가장 최근 영상(첫 번째 entry) 추출
+        entry = root.find('atom:entry', ns)
+        if not entry:
+            raise ValueError("RSS 피드에서 영상을 찾을 수 없습니다.")
+            
+        video_id = entry.find('yt:videoId', ns).text
+        video_title = entry.find('atom:title', ns).text
         logging.info(f"Latest video ID: {video_id}, Title: {video_title}")
         
         logging.info("Downloading transcript in Korean...")
-        # Attempt to get Korean transcript
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
+        # 'ko' 뿐만 아니라 'ko-KR'도 허용하도록 유연성 확보
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'ko-KR'])
         transcript_text = " ".join([t['text'] for t in transcript_list])
         return video_title, video_id, transcript_text
         
     except Exception as e:
-        logging.error(f"Failed to get transcript. Make sure the handle is correct and the video has Korean subtitles. Error: {e}")
+        logging.error(f"Failed to get transcript. Error: {e}")
         return None, None, None
 
 def analyze_transcript(transcript_text):
-    logging.info("Analyzing transcript with Gemini 3.1 Pro API...")
+    logging.info("Analyzing transcript with Gemini 1.5 Pro API...")
     if "GEMINI_API_KEY" not in os.environ:
         logging.error("GEMINI_API_KEY is not set.")
         return None
         
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
     
-    # We use gemini-1.5-pro as it's the widely available and exceptionally capable Pro model
-    # (or you can override this if a specific "3.1-pro" alias is provided in your project)
+    # 모델명은 구동 안정성을 위해 현업 주력인 1.5 Pro로 고정
     model = genai.GenerativeModel('gemini-1.5-pro')
     
     prompt = f"""
@@ -79,23 +88,13 @@ def create_google_doc(title, content):
         docs_service = build('docs', 'v1', credentials=creds)
         drive_service = build('drive', 'v3', credentials=creds)
         
-        # 1. 문서 생성
         doc_title = f"[머니코믹스 분석] {title} - {datetime.now().strftime('%Y-%m-%d')}"
         document = docs_service.documents().create(body={'title': doc_title}).execute()
         document_id = document.get('documentId')
         
-        # 2. 내용 삽입
-        requests_body = [
-            {
-                'insertText': {
-                    'location': {'index': 1},
-                    'text': content
-                }
-            }
-        ]
+        requests_body = [{'insertText': {'location': {'index': 1}, 'text': content}}]
         docs_service.documents().batchUpdate(documentId=document_id, body={'requests': requests_body}).execute()
         
-        # 3. 링크가 있는 모든 사용자 읽기 권한 부여
         drive_service.permissions().create(
             fileId=document_id,
             body={'type': 'anyone', 'role': 'reader'},
@@ -103,7 +102,7 @@ def create_google_doc(title, content):
         ).execute()
         
         doc_url = f"https://docs.google.com/document/d/{document_id}/edit"
-        logging.info(f"Google Doc created and shared successfully: {doc_url}")
+        logging.info(f"Google Doc created successfully: {doc_url}")
         return doc_url
         
     except Exception as e:
@@ -120,21 +119,16 @@ def send_telegram_message(message):
             raise ValueError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set.")
             
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": message
-        }
-        res = requests.post(url, json=payload)
-        res.raise_for_status()
+        requests.post(url, json={"chat_id": chat_id, "text": message}).raise_for_status()
         logging.info("Telegram message sent successfully.")
     except Exception as e:
         logging.error(f"Telegram API error: {e}")
 
 def main():
-    # 기본 핸들은 @moneycomics로 가정하되 환경 변수로 주입받을 수 있도록 처리
-    channel_handle = os.environ.get("YOUTUBE_CHANNEL_HANDLE", "@moneycomics")
+    # 이제 핸들이 아니라 절대 변하지 않는 채널 ID를 타겟팅함.
+    channel_id = os.environ.get("YOUTUBE_CHANNEL_ID", "UCJo6G1u0e_-wS-JQn3T-zEw")
     
-    title, video_id, transcript = get_latest_video_transcript(channel_handle)
+    title, video_id, transcript = get_latest_video_transcript(channel_id)
     if not transcript:
         logging.error("Failed to fetch transcript. Exiting pipeline.")
         sys.exit(1)
