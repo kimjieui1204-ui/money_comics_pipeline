@@ -7,13 +7,17 @@ on:
   # 수동 실행을 위한 트리거
   workflow_dispatch:
 
+env:
+  # 💡 Node 20 경고문 원천 차단 (미래 지향적 강제 세팅)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -26,8 +30,8 @@ jobs:
           
       - name: Run pipeline
         env:
-            # GitHub Secrets에서 환경 변수 주입
-          YOUTUBE_CHANNEL_HANDLE: ${{ secrets.YOUTUBE_CHANNEL_HANDLE }}
+          # 💡 Handle 대신 ID로 변수명 통일 (main.py와 규격 일치)
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }} 
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
