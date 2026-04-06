@@ -6,13 +6,12 @@ import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-# 💡 라이브러리 직접 참조 (최신 규격)
+# 💡 최신 규격 라이브러리 임포트
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 from google import genai
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# 로깅 설정
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - [%(levelname)s] - %(message)s'
@@ -37,7 +36,6 @@ def get_latest_video_transcript(channel_id):
         video_title = entry.find('atom:title', ns).text
         logging.info(f"Target Video Found -> ID: {video_id} / Title: {video_title}")
         
-        # 분석 가치가 떨어지는 노이즈 필터링
         skip_keywords = ["미에로화이바", "쇼츠", "Shorts", "예고편", "AD", "광고"]
         if any(keyword in video_title for keyword in skip_keywords):
             logging.warning("분석 제외 대상(광고/쇼츠) 키워드가 감지되었습니다.")
@@ -45,14 +43,15 @@ def get_latest_video_transcript(channel_id):
         
         logging.info("Attempting to download transcript...")
         
-        # 💡 핵심 패치: 최신 API 아키텍처(list_transcripts -> find_transcript -> fetch) 반영
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # 🚀 핵심 패치 적용 완료: 객체 생성 후 .list() 메서드 호출
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
         
-        # 한국어를 우선적으로 찾고, 없으면 영어를 가져옵니다.
+        # 한국어 우선 탐색, 없으면 영어
         transcript = transcript_list.find_transcript(['ko', 'ko-KR', 'en'])
         fetched_data = transcript.fetch()
         
-        # Raw 데이터 파싱 및 텍스트 병합
+        # 텍스트 병합
         transcript_text = " ".join([t['text'] for t in fetched_data])
         return video_title, video_id, transcript_text
         
@@ -84,7 +83,7 @@ def analyze_transcript(transcript_text):
         [작성 원칙]
         1. 매크로 지표(금리, 고용 등)가 시장에 주는 영향은 직관적인 비유(예: 엔진 오일, 가속 페달 등)를 섞어 설명할 것.
         2. 타겟 기업에 대해 단순 요약이 아닌, 히스토리 기반의 날카로운 '딥 다이브' 분석을 제공할 것.
-        3. EPS, ROE 등 기본적인 주식 용어 설명은 절대 하지 말 것. (지면 낭비 금지)
+        3. 기본적인 주식 용어 설명은 절대 하지 말 것. (지면 낭비 금지)
         4. 혁신적이고 실질적인 관점에서 향후 대응 전략을 제시할 것.
         5. 마크다운 형식을 활용하여 가독성을 극대화할 것.
         """
