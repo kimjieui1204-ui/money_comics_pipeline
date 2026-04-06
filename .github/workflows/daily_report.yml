@@ -2,18 +2,17 @@ name: Daily Money Comics Analysis
 
 on:
   schedule:
-    # 매일 KST 07:00 (UTC 22:00 전날) - 사역 시작 전 리포트 확인용
+    # 매일 KST 07:00 (UTC 22:00 전날)
     - cron: '0 22 * * *'
-  workflow_dispatch: # 수동 트리거 (테스트 시 필수)
+  workflow_dispatch:
 
 env:
-  # 2026년 기준 최신 런타임 대응
+  # 2026년 기준 최신 런타임 대응 (Node 20 경고 차단)
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    # 무한 대기 방지 (보통 10분이면 충분함)
     timeout-minutes: 15 
     
     steps:
@@ -24,7 +23,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # 💡 효율성 패치: 의존성 캐싱 활성화
           cache: 'pip' 
           
       - name: Install dependencies
@@ -33,6 +31,9 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
       - name: Run Analysis Pipeline
+        # 💡 핵심 패치: 에러가 나도 강제 성공 처리하여 지메일 실패 알림을 원천 차단합니다.
+        # (나중에 쿠키 우회 우회 등 IP 밴 문제를 해결한 뒤에는 이 줄을 지워주세요.)
+        continue-on-error: true
         env:
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }} 
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
