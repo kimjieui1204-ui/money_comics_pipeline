@@ -2,5 +2,5 @@ youtube-transcript-api>=0.6.2
 google-genai
 google-api-python-client
 google-auth-httplib2
-google-auth
+google-auth-oauthlib
 requests
