@@ -2,18 +2,20 @@ name: Daily Money Comics Analysis
 
 on:
   schedule:
-    # 매일 KST 07:00 (UTC 22:00 전날)
+    # 매일 KST 07:00 (UTC 22:00 전날) - 사역 시작 전 리포트 확인용
     - cron: '0 22 * * *'
-  # 수동 실행을 위한 트리거
-  workflow_dispatch:
+  workflow_dispatch: # 수동 트리거 (테스트 시 필수)
 
 env:
-  # 💡 Node 20 경고문 원천 차단 (미래 지향적 강제 세팅)
+  # 2026년 기준 최신 런타임 대응
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    # 무한 대기 방지 (보통 10분이면 충분함)
+    timeout-minutes: 15 
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,15 +24,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          # 💡 효율성 패치: 의존성 캐싱 활성화
+          cache: 'pip' 
           
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
-      - name: Run pipeline
+      - name: Run Analysis Pipeline
         env:
-          # 💡 Handle 대신 ID로 변수명 통일 (main.py와 규격 일치)
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }} 
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
